@@ -1,1 +1,1 @@
-print("Github es mierda")
+print("Github")
