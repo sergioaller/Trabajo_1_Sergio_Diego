@@ -35,34 +35,39 @@ X_readed = np.asarray(feature_df)
 #print(feature_df.shape)
 y_readed = np.asarray(df['diagnosis'])
 #print(y_readed[0:5])
-for i in range(1,6):
-    X_train, X_test, y_train, y_test = train_test_split(X_readed, y_readed, random_state = i)
+#for i in range(1,6):
+i=1
+X_train, X_test, y_train, y_test = train_test_split(X_readed, y_readed, random_state = i)
 
-    #BALANCEO
-    print (f'Conjunto entrenamiento original {i}', X_train.shape,  y_train.shape)
-    unique, counts = np.unique(y_train, return_counts=True)
-    print(dict(zip(unique, counts)))
+#BALANCEO
+print (f'Conjunto entrenamiento original {i}', X_train.shape,  y_train.shape)
+unique, counts = np.unique(y_train, return_counts=True)
+#print(dict(zip(unique, counts)))
 
-    # Balanceo de datos: ejemplo de oversampling
-    sm_over = SMOTE(random_state=1)
-    X_train_over, y_train_over= sm_over.fit_resample(X_train, y_train)
+# Balanceo de datos: ejemplo de oversampling
+sm_over = SMOTE(random_state=1)
+X_train_over, y_train_over= sm_over.fit_resample(X_train, y_train)
 
-    # Balanceo de datos: ejemplo de undersampling
-    sm_under = NearMiss()
-    X_train_under, y_train_under= sm_under.fit_resample(X_train, y_train)
+# Balanceo de datos: ejemplo de undersampling
+sm_under = NearMiss()
+X_train_under, y_train_under= sm_under.fit_resample(X_train, y_train)
 
 
-    print(f'\nBalanceado con undersampling {i}:', X_train_under.shape,  y_train_under.shape)
-    unique_under, counts_under = np.unique(y_train_under, return_counts=True)
-    print(dict(zip(unique_under, counts_under)))
+print(f'\nBalanceado con undersampling {i}:', X_train_under.shape,  y_train_under.shape)
+unique_under, counts_under = np.unique(y_train_under, return_counts=True)
+#print(dict(zip(unique_under, counts_under)))
 
-    print(f'\nBalanceado con oversampling {i}:', X_train_over.shape,  y_train_over.shape)
-    unique_over, counts_over = np.unique(y_train_over, return_counts=True)
-    print(dict(zip(unique_over, counts_over)))
+print(f'\nBalanceado con oversampling {i}:', X_train_over.shape,  y_train_over.shape)
+unique_over, counts_over = np.unique(y_train_over, return_counts=True)
+#print(dict(zip(unique_over, counts_over)))
 
-    #normalización
-    scaler = preprocessing.StandardScaler()
-    scaler.fit(X_train) # fit realiza los cálculos y los almacena
+#normalización
+scaler = preprocessing.StandardScaler()
+scaler.fit(X_train_over) # fit realiza los cálculos y los almacena
+scaler.fit(X_train_under) 
 
-    X_train = scaler.transform(X_train) # aplica los cálculos sobre el conjunto de datos de entrada para escalarlos
-    X_train[0:5]
+X_train_over = scaler.transform(X_train_over) # aplica los cálculos sobre el conjunto de datos de entrada para escalarlos
+X_train_under = scaler.transform(X_train_under) 
+print(X_train_over[0:5])
+print(X_train_under[0:5])
+
