@@ -30,7 +30,7 @@ def print_variance_info(X, threshold=0.90):
     for i, (var, var_acc) in enumerate(zip(var_individual, var_acumulada), 1):
         print(f"{i:10} | {var:20.6f} | {var_acc:20.6f}")
     n_optimo = np.argmax(var_acumulada >= threshold) + 1
-    print(f"\n✨ Con {n_optimo} componentes se alcanza al menos el {threshold*100:.1f}% de varianza acumulada.")
+    print(f"\n Con {n_optimo} componentes se alcanza al menos el {threshold*100:.1f}% de varianza acumulada.")
     return n_optimo
 
 def apply_pca(X, threshold=0.90):
@@ -42,11 +42,11 @@ def apply_pca(X, threshold=0.90):
     return projected, loss
 
 def apply_oversampling(X, y):
-    sm = SMOTE(random_state=42)
+    sm = SMOTE()
     return sm.fit_resample(X, y)
 
 def apply_undersampling(X, y):
-    rus = RandomUnderSampler(random_state=42)
+    rus = RandomUnderSampler()
     return rus.fit_resample(X, y)
 
 def save_plot(x, y, title, xlabel, ylabel, path):
@@ -70,23 +70,22 @@ def save_avg_plot(x, y_list, title, xlabel, ylabel, path):
     plt.savefig(path)
     plt.close()
 
-def save_confusion_matrix(y_true, y_pred, path):
-    cm = confusion_matrix(y_true, y_pred)
-    labels = np.unique(np.concatenate((y_true, y_pred)))
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[str(l) for l in labels])
-    disp.plot()
+def save_confusion_matrix_from_cm(cm, path):
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['Benigno', 'Maligno'])
+    disp.plot(cmap="Blues", colorbar=False)
     plt.title("Matriz de Confusión")
     plt.savefig(path)
     plt.close()
 
 
-def knn_experiment(X, y, iterations, max_k, final_k, string_sipca, output_dir):
+def knn_experiment(X, y, iterations, max_k, string_sipca, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     k_range = list(range(1, max_k+1))
     all_scores, all_train_times, all_predict_times = [], [], []
 
+    print(f"\n[KNN] Ejecutando experimento: {string_sipca}")
+
     for i in range(iterations):
-        print(f"[KNN] Iteración {i+1}/{iterations}")
         X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=i)
 
         scores, train_times, predict_times, preds_list = [], [], [], []
@@ -108,13 +107,18 @@ def knn_experiment(X, y, iterations, max_k, final_k, string_sipca, output_dir):
         all_train_times.append(train_times)
         all_predict_times.append(predict_times)
 
-        best_k = np.argmax(scores) + 1
-        save_plot(k_range, scores, "KNN Score", "k", "% acierto", f"{output_dir}/knn_scores_{string_sipca}_{i}.jpg")
-        save_confusion_matrix(y_test, preds_list[best_k - 1], f"{output_dir}/knn_cm_{string_sipca}_{i}.jpg")
+        best_k_idx = np.argmax(scores)
+        save_plot(k_range, scores, "KNN Score", "k", "Porcentaje acierto", f"{output_dir}/knn_scores_{string_sipca}_{i}.jpg")
+
+    avg_scores = np.mean(all_scores, axis=0)
+    final_k = k_range[np.argmax(avg_scores)]
+
+    print(f"[KNN] Mejor k promedio: {final_k:2d} | Score medio: {avg_scores[final_k - 1]:.4f}")
 
     save_avg_plot(k_range, all_scores, "KNN Average Score", "k", "Porcentaje acierto", f"{output_dir}/knn_avg_scores_{string_sipca}.jpg")
 
     scores, train_times, predict_times = [], [], []
+    final_cm = np.zeros((2, 2), dtype=int)
     for i in range(iterations):
         X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=i)
         model = KNeighborsClassifier(n_neighbors=final_k)
@@ -128,67 +132,67 @@ def knn_experiment(X, y, iterations, max_k, final_k, string_sipca, output_dir):
         predict_times.append((time.time() - start) * 1000)
 
         scores.append(model.score(X_test, y_test))
-        save_confusion_matrix(y_test, preds, f"{output_dir}/knn_final_cm_{string_sipca}_{i}.jpg")
+        final_cm += confusion_matrix(y_test, preds)
 
-    print("[KNN] Resultados finales:")
-    print("  Score medio:", np.mean(scores))
-    print("  Tiempo medio entrenamiento:", np.mean(train_times), "ms")
-    print("  Tiempo medio predicción:", np.mean(predict_times), "ms")
+    save_confusion_matrix_from_cm(final_cm, f"{output_dir}/knn_final_cm_{string_sipca}.jpg")
 
-def svm_experiment(X, y, iterations, param_grid, final_params, string_sipca, output_dir):
+    print(f"[KNN Final] Score medio:           {np.mean(scores):.4f}")
+    print(f"            Tiempo entrenamiento: {np.mean(train_times):.2f} ms")
+    print(f"            Tiempo predicción:    {np.mean(predict_times):.2f} ms\n")
+
+
+def svm_experiment(X, y, iterations, param_grid, string_sipca, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     kernels = param_grid['kernels']
     c_values = param_grid['rbf_c']
     gamma_values = param_grid['rbf_gamma']
 
-    for kernel in kernels:
-        if kernel == 'linear':
-            scores, train_times, predict_times = [], [], []
-            for i in range(iterations):
-                print(f"[SVM Linear] Iteración {i+1}/{iterations}")
-                X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=i)
-                model = SVC(kernel='linear')
+    kernel_scores = {}
+    best_combo = (None, None)
 
-                start = time.time()
-                model.fit(X_train, y_train.ravel())
-                train_times.append((time.time() - start) * 1000)
+    print(f"[SVM] Ejecutando búsqueda de hiperparámetros: {string_sipca}")
 
-                start = time.time()
-                preds = model.predict(X_test)
-                predict_times.append((time.time() - start) * 1000)
+    if 'linear' in kernels:
+        scores = []
+        for i in range(iterations):
+            X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=i)
+            model = SVC(kernel='linear')
+            model.fit(X_train, y_train.ravel())
+            scores.append(model.score(X_test, y_test))
 
-                scores.append(model.score(X_test, y_test))
-                save_confusion_matrix(y_test, preds, f"{output_dir}/svm_linear_cm_{string_sipca}_{i}.jpg")
+        kernel_scores['linear'] = np.mean(scores)
 
-            print("[SVM Linear] Score medio:", np.mean(scores))
-            print("  Tiempo medio entrenamiento:", np.mean(train_times), "ms")
-            print("  Tiempo medio predicción:", np.mean(predict_times), "ms")
+    if 'rbf' in kernels:
+        best_scores_by_combo = {}
+        for c in c_values:
+            for gamma in gamma_values:
+                combo_scores = []
+                for i in range(iterations):
+                    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=i)
+                    model = SVC(kernel='rbf', C=c, gamma=gamma)
+                    model.fit(X_train, y_train.ravel())
+                    combo_scores.append(model.score(X_test, y_test))
+                best_scores_by_combo[(c, gamma)] = np.mean(combo_scores)
 
-        elif kernel == 'rbf':
-            best_scores_by_combo = {}
-            for c in c_values:
-                for gamma in gamma_values:
-                    combo_scores = []
-                    for i in range(iterations):
-                        print(f"[SVM RBF] Iter {i+1}, C={c}, gamma={gamma}")
-                        X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=i)
-                        model = SVC(kernel='rbf', C=c, gamma=gamma)
-                        model.fit(X_train, y_train.ravel())
-                        score = model.score(X_test, y_test)
-                        combo_scores.append(score)
-                    best_scores_by_combo[(c, gamma)] = np.mean(combo_scores)
-            sorted_combos = sorted(best_scores_by_combo.items(), key=lambda x: x[1], reverse=True)
-            print("[SVM RBF] Mejores combinaciones:", sorted_combos[:5])
+        sorted_combos = sorted(best_scores_by_combo.items(), key=lambda x: x[1], reverse=True)
+        best_combo, best_rbf_score = sorted_combos[0]
+        kernel_scores['rbf'] = best_rbf_score
 
-    kernel = final_params['kernel']
-    c = final_params['c']
-    gamma = final_params['gamma']
+        print("[SVM RBF] Top 3 combinaciones:")
+        for (c, g), s in sorted_combos[:3]:
+            print(f"           C={c:<6} gamma={g:<6} | Score medio: {s:.4f}")
+
+    best_kernel = max(kernel_scores, key=kernel_scores.get)
+    print(f"[SVM] Mejor kernel: {best_kernel} (Score medio: {kernel_scores[best_kernel]:.4f})")
+
     scores, train_times, predict_times = [], [], []
+    final_cm = np.zeros((2, 2), dtype=int)
     for i in range(iterations):
         X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=i)
-        if kernel == 'linear':
+        if best_kernel == 'linear':
             model = SVC(kernel='linear')
         else:
+            c, gamma = best_combo
             model = SVC(kernel='rbf', C=c, gamma=gamma)
 
         start = time.time()
@@ -200,11 +204,13 @@ def svm_experiment(X, y, iterations, param_grid, final_params, string_sipca, out
         predict_times.append((time.time() - start) * 1000)
 
         scores.append(model.score(X_test, y_test))
-        save_confusion_matrix(y_test, preds, f"{output_dir}/svm_final_cm_{string_sipca}_{i}.jpg")
+        final_cm += confusion_matrix(y_test, preds)
 
-    print("[SVM Final] Score medio:", np.mean(scores))
-    print("  Tiempo medio entrenamiento:", np.mean(train_times), "ms")
-    print("  Tiempo medio predicción:", np.mean(predict_times), "ms")
+    save_confusion_matrix_from_cm(final_cm, f"{output_dir}/svm_final_cm_{string_sipca}.jpg")
+
+    print(f"[SVM Final] Score medio:           {np.mean(scores):.4f}")
+    print(f"             Tiempo entrenamiento: {np.mean(train_times):.2f} ms")
+    print(f"             Tiempo predicción:    {np.mean(predict_times):.2f} ms\n")
 
 
 def main():
@@ -237,9 +243,9 @@ def main():
 
             if apply_PCA:
                 X_proc, loss = apply_pca(X_proc, threshold=0.90)
-                print(f"PCA applied. Reconstruction loss: {loss}")
+                print(f"PCA applied. Reconstruction loss: {loss:.4f}")
 
-            knn_experiment(X_proc, y_proc, iterations=5, max_k=20, final_k=5,
+            knn_experiment(X_proc, y_proc, iterations=5, max_k=20,
                            string_sipca=f"{balance_str}_{string_sipca}", output_dir=output_dir)
 
             svm_param_grid = {
@@ -247,9 +253,7 @@ def main():
                 'rbf_c': [0.001, 0.01, 0.1, 1, 10, 100, 1000],
                 'rbf_gamma': [0.001, 0.01, 0.1, 1, 10, 100, 1000]
             }
-            svm_final_params = {'kernel': 'linear', 'c': None, 'gamma': None}
             svm_experiment(X_proc, y_proc, iterations=5, param_grid=svm_param_grid,
-                           final_params=svm_final_params,
                            string_sipca=f"{balance_str}_{string_sipca}", output_dir=output_dir)
 
 
