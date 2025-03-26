@@ -14,6 +14,7 @@ from imblearn.under_sampling import RandomUnderSampler
 
 
 def divide_dataset(df, features, label):
+    #Devuelve X e y
     return df[features].values, df[label].values
 
 def normalization(X):
@@ -21,6 +22,7 @@ def normalization(X):
     return scaler.fit_transform(X)
 
 def print_variance_info(X, threshold=0.90):
+    #Calcula la varianza por componentes y determina el número de componentes para alcanzar un umbral del 90% (por defecto)
     pca = PCA()
     pca.fit(X)
     var_individual = pca.explained_variance_ratio_
@@ -34,6 +36,7 @@ def print_variance_info(X, threshold=0.90):
     return n_optimo
 
 def apply_pca(X, threshold=0.90):
+    #Aplica reducción de dimensionalidad al conjunto de datos y calcula la pérdida de información como error cuadrático medio
     n_opt = print_variance_info(X, threshold)
     pca = PCA(n_components=n_opt)
     projected = pca.fit_transform(X)
@@ -50,6 +53,7 @@ def apply_undersampling(X, y):
     return rus.fit_resample(X, y)
 
 def save_plot(x, y, title, xlabel, ylabel, path):
+    #Guarda un gráfico a partir de dos listas, x e y.
     plt.plot(x, y)
     plt.grid(True, alpha=0.3)
     plt.title(title)
@@ -59,6 +63,7 @@ def save_plot(x, y, title, xlabel, ylabel, path):
     plt.close()
 
 def save_avg_plot(x, y_list, title, xlabel, ylabel, path):
+    #Hace un gráfico promedio de varias curvas.
     avg = np.mean(y_list, axis=0)
     std = np.std(y_list, axis=0)
     plt.plot(x, avg)
@@ -71,6 +76,7 @@ def save_avg_plot(x, y_list, title, xlabel, ylabel, path):
     plt.close()
 
 def save_confusion_matrix_from_cm(cm, path):
+    #Recibe la matriz suma de las 5 iteraciones de una misma combinación de parámetros y la muestra por pantalla
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['Benigno', 'Maligno'])
     disp.plot(cmap="Blues", colorbar=False)
     plt.title("Matriz de Confusión")
@@ -79,6 +85,8 @@ def save_confusion_matrix_from_cm(cm, path):
 
 
 def knn_experiment(X, y, iterations, max_k, string_sipca, output_dir):
+    #Realiza un experimento con kNN para probar distintos valores de k y elegir el que mejor score tiene.
+    #  Saca resultados con ese mejor k.
     os.makedirs(output_dir, exist_ok=True)
     k_range = list(range(1, max_k+1))
     all_scores, all_train_times, all_predict_times = [], [], []
@@ -142,6 +150,8 @@ def knn_experiment(X, y, iterations, max_k, string_sipca, output_dir):
 
 
 def svm_experiment(X, y, iterations, param_grid, string_sipca, output_dir):
+    #Aplica SVM con diferentes configuraciones de kernel y parámetros de la función RBF.
+    # Saca resultados de la mejor configuración.
     os.makedirs(output_dir, exist_ok=True)
     kernels = param_grid['kernels']
     c_values = param_grid['rbf_c']
@@ -150,7 +160,7 @@ def svm_experiment(X, y, iterations, param_grid, string_sipca, output_dir):
     kernel_scores = {}
     best_combo = (None, None)
 
-    print(f"[SVM] Ejecutando búsqueda de hiperparámetros: {string_sipca}")
+    print(f"[SVM] Ejecutando búsqueda de parámetros óptimos: {string_sipca}")
 
     if 'linear' in kernels:
         scores = []
@@ -212,16 +222,21 @@ def svm_experiment(X, y, iterations, param_grid, string_sipca, output_dir):
     print(f"             Tiempo entrenamiento: {np.mean(train_times):.2f} ms")
     print(f"             Tiempo predicción:    {np.mean(predict_times):.2f} ms\n")
 
-
 def main():
+    # Carga del dataset sin valores nulos
     df = pd.read_csv("breast-cancer.csv", na_values=["?"])
     df = df.dropna()
-    df['diagnosis'] = df['diagnosis'].map({'B': 0, 'M': 1})
-    features = df.columns[2:]
+
+    # Codificación de la variable diagnosis (Benigno/Maligno -> 0/1)
+    encoder = preprocessing.LabelEncoder()
+    df['diagnosis'] = encoder.fit_transform(df['diagnosis'])
+
+    features = df.columns[2:]  # Selecciona características (omite ID y diagnosis)
     label = 'diagnosis'
 
     X, y = divide_dataset(df, features, label)
 
+    # Se prueban todas las combinaciones de: balanceo {ninguno, oversampling, undersampling} y uso de PCA {sí, no}
     for balance_type in ['none', 'oversample', 'undersample']:
         for apply_PCA in [False, True]:
             X_proc = normalization(X)
@@ -233,28 +248,46 @@ def main():
                 'undersample': 'Undersampling'
             }[balance_type]
 
+            # Aplica balanceo si procede
             if balance_type == 'oversample':
                 X_proc, y_proc = apply_oversampling(X_proc, y_proc)
             elif balance_type == 'undersample':
                 X_proc, y_proc = apply_undersampling(X_proc, y_proc)
 
+            # Nombre para identificar la clasificación (ej: Oversampling_PCA)
             string_sipca = "PCA" if apply_PCA else "noPCA"
             output_dir = f"results/{balance_str}_{string_sipca}"
 
+            # Aplica PCA si procede
             if apply_PCA:
                 X_proc, loss = apply_pca(X_proc, threshold=0.90)
-                print(f"PCA applied. Reconstruction loss: {loss:.4f}")
+                print(f"PCA applied. Reconstruction loss: {loss:.6f}")
 
-            knn_experiment(X_proc, y_proc, iterations=5, max_k=20,
-                           string_sipca=f"{balance_str}_{string_sipca}", output_dir=output_dir)
+            # Ejecuta KNN para este escenario
+            knn_experiment(
+                X_proc, y_proc,
+                iterations=5,
+                max_k=20,
+                string_sipca=f"{balance_str}_{string_sipca}",
+                output_dir=output_dir
+            )
 
+            # Define los kernel y los parámetros para SVM con kernel RBF
             svm_param_grid = {
                 'kernels': ['linear', 'rbf'],
                 'rbf_c': [0.001, 0.01, 0.1, 1, 10, 100, 1000],
                 'rbf_gamma': [0.001, 0.01, 0.1, 1, 10, 100, 1000]
             }
-            svm_experiment(X_proc, y_proc, iterations=5, param_grid=svm_param_grid,
-                           string_sipca=f"{balance_str}_{string_sipca}", output_dir=output_dir)
+
+            # Ejecuta SVM para este escenario
+            svm_experiment(
+                X_proc, y_proc,
+                iterations=5,
+                param_grid=svm_param_grid,
+                string_sipca=f"{balance_str}_{string_sipca}",
+                output_dir=output_dir
+            )
+
 
 
 if __name__ == "__main__":
