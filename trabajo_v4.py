@@ -84,7 +84,7 @@ def save_confusion_matrix_from_cm(cm, path):
     plt.close()
 
 
-def knn_experiment(X, y, iterations, max_k, string_sipca, output_dir,balance_type):
+def knn_experiment(X, y, iterations, max_k, string_sipca, output_dir,balance_type,df_all_results,df_best_results):
     #Realiza un experimento con kNN para probar distintos valores de k y elegir el que mejor score tiene.
     #  Saca resultados con ese mejor k.
     os.makedirs(output_dir, exist_ok=True)
@@ -115,6 +115,10 @@ def knn_experiment(X, y, iterations, max_k, string_sipca, output_dir,balance_typ
 
             preds_list.append(preds)
             scores.append(model.score(X_test, y_test))
+
+            df_all_results.loc[len(df_all_results)] = ["KNN", balance_type, string_sipca.split("_")[-1], f"k={k}", i+1,
+                                                       scores[-1], train_times[-1], predict_times[-1]]
+
 
         all_scores.append(scores)
         all_train_times.append(train_times)
@@ -153,6 +157,10 @@ def knn_experiment(X, y, iterations, max_k, string_sipca, output_dir,balance_typ
         scores.append(model.score(X_test, y_test))
         final_cm += confusion_matrix(y_test, preds) / iterations
 
+        df_best_results.loc[len(df_best_results)] = ["KNN", balance_type, string_sipca.split("_")[-1], f"k={final_k}",i+1,
+                                                     scores[-1], train_times[-1], predict_times[-1]]
+
+
     final_cm = np.round(final_cm).astype(int)
     save_confusion_matrix_from_cm(final_cm, f"{output_dir}/knn_final_cm_{string_sipca}.jpg")
 
@@ -160,10 +168,10 @@ def knn_experiment(X, y, iterations, max_k, string_sipca, output_dir,balance_typ
     print(f"            Tiempo entrenamiento: {np.mean(train_times):.2f} ms")
     print(f"            Tiempo predicción:    {np.mean(predict_times):.2f} ms\n")
 
+    return df_all_results,df_best_results
 
-def svm_experiment(X, y, iterations, param_grid, string_sipca, output_dir,balance_type):
-    #Aplica SVM con diferentes configuraciones de kernel y parámetros de la función RBF.
-    # Saca resultados de la mejor configuración.
+
+def svm_experiment(X, y, iterations, param_grid, string_sipca, output_dir, balance_type, df_all_results, df_best_results):
     os.makedirs(output_dir, exist_ok=True)
     kernels = param_grid['kernels']
     c_values = param_grid['rbf_c']
@@ -178,15 +186,26 @@ def svm_experiment(X, y, iterations, param_grid, string_sipca, output_dir,balanc
         scores = []
         for i in range(iterations):
             X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=i)
-
             if balance_type == 'oversample':
                 X_train, y_train = apply_oversampling(X_train, y_train)
             elif balance_type == 'undersample':
                 X_train, y_train = apply_undersampling(X_train, y_train)
 
             model = SVC(kernel='linear')
+
+            start = time.time()
             model.fit(X_train, y_train)
-            scores.append(model.score(X_test, y_test))
+            train_time = (time.time() - start) * 1000
+
+            start = time.time()
+            preds = model.predict(X_test)
+            predict_time = (time.time() - start) * 1000
+
+            score = model.score(X_test, y_test)
+            scores.append(score)
+
+            df_all_results.loc[len(df_all_results)] = ["SVM", balance_type, string_sipca.split("_")[-1], "linear", i+1,
+                                                       score, train_time, predict_time]
 
         kernel_scores['linear'] = np.mean(scores)
 
@@ -197,15 +216,28 @@ def svm_experiment(X, y, iterations, param_grid, string_sipca, output_dir,balanc
                 combo_scores = []
                 for i in range(iterations):
                     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=i)
-
                     if balance_type == 'oversample':
                         X_train, y_train = apply_oversampling(X_train, y_train)
                     elif balance_type == 'undersample':
                         X_train, y_train = apply_undersampling(X_train, y_train)
 
                     model = SVC(kernel='rbf', C=c, gamma=gamma)
+
+                    start = time.time()
                     model.fit(X_train, y_train)
-                    combo_scores.append(model.score(X_test, y_test))
+                    train_time = (time.time() - start) * 1000
+
+                    start = time.time()
+                    preds = model.predict(X_test)
+                    predict_time = (time.time() - start) * 1000
+
+                    score = model.score(X_test, y_test)
+                    combo_scores.append(score)
+
+                    df_all_results.loc[len(df_all_results)] = ["SVM", balance_type, string_sipca.split("_")[-1],
+                                                               f"rbf_C{c}_gamma{gamma}", i+1,
+                                                               score, train_time, predict_time]
+
                 best_scores_by_combo[(c, gamma)] = np.mean(combo_scores)
 
         sorted_combos = sorted(best_scores_by_combo.items(), key=lambda x: x[1], reverse=True)
@@ -231,20 +263,29 @@ def svm_experiment(X, y, iterations, param_grid, string_sipca, output_dir,balanc
 
         if best_kernel == 'linear':
             model = SVC(kernel='linear')
+            kernel_label = "linear"
         else:
             c, gamma = best_combo
             model = SVC(kernel='rbf', C=c, gamma=gamma)
+            kernel_label = f"rbf_C{c}_gamma{gamma}"
 
         start = time.time()
         model.fit(X_train, y_train)
-        train_times.append((time.time() - start) * 1000)
+        train_time = (time.time() - start) * 1000
 
         start = time.time()
         preds = model.predict(X_test)
-        predict_times.append((time.time() - start) * 1000)
+        predict_time = (time.time() - start) * 1000
 
-        scores.append(model.score(X_test, y_test))
+        score = model.score(X_test, y_test)
+        scores.append(score)
+        train_times.append(train_time)
+        predict_times.append(predict_time)
+
         final_cm += confusion_matrix(y_test, preds) / iterations
+
+        df_best_results.loc[len(df_best_results)] = ["SVM", balance_type, string_sipca.split("_")[-1], kernel_label, i+1,
+                                                     score, train_time, predict_time]
 
     final_cm = np.round(final_cm).astype(int)
     save_confusion_matrix_from_cm(final_cm, f"{output_dir}/svm_final_cm_{string_sipca}.jpg")
@@ -252,6 +293,10 @@ def svm_experiment(X, y, iterations, param_grid, string_sipca, output_dir,balanc
     print(f"[SVM Final] Score medio:           {np.mean(scores):.4f}")
     print(f"             Tiempo entrenamiento: {np.mean(train_times):.2f} ms")
     print(f"             Tiempo predicción:    {np.mean(predict_times):.2f} ms\n")
+
+    return df_all_results, df_best_results
+
+
 
 def main():
     # Carga del dataset sin valores nulos
@@ -269,6 +314,11 @@ def main():
 
     #Valores que servirán de umbral de varianza para aplicar PCA con los componentes correspondientes
     pca_thresholds = [None, 0.90, 0.95]
+
+    df_all_results = pd.DataFrame(columns=["Algoritmo", "Balanceo", "PCA", "Parametros", "Iteracion", "Score", "Train Time (ms)", "Predict Time (ms)"])
+    df_best_results = pd.DataFrame(columns=["Algoritmo", "Balanceo", "PCA", "Parametros", "Iteracion", "Score", "Train Time (ms)", "Predict Time (ms)"])
+
+
 
     # Se prueban todas las combinaciones de: balanceo {ninguno, oversampling, undersampling} y uso de PCA {sí, no}
     for balance_type in ['none', 'oversample', 'undersample']:
@@ -292,12 +342,13 @@ def main():
             output_dir = f"results/{balance_str}_{pca_str}"
 
             # Ejecuta KNN para este escenario
-            knn_experiment(
+            df_all_results,df_best_results = knn_experiment(
                 X_proc, y_proc,
                 iterations=5,
                 max_k=20,
                 string_sipca=f"{balance_str}_{pca_str}",
-                output_dir=output_dir, balance_type=balance_type
+                output_dir=output_dir, balance_type=balance_type,
+                df_all_results=df_all_results, df_best_results=df_best_results
             )
 
             # Define los kernel y los parámetros para SVM con kernel RBF
@@ -308,13 +359,18 @@ def main():
             }
 
             # Ejecuta SVM para este escenario
-            svm_experiment(
+            df_all_results,df_best_results = svm_experiment(
                 X_proc, y_proc,
                 iterations=5,
                 param_grid=svm_param_grid,
                 string_sipca=f"{balance_str}_{pca_str}",
-                output_dir=output_dir, balance_type=balance_type
+                output_dir=output_dir, balance_type=balance_type,
+                df_all_results=df_all_results, df_best_results=df_best_results
             )
+    with pd.ExcelWriter("resultados_modelos.xlsx") as writer:
+        df_all_results.to_excel(writer, sheet_name="Todas_las_pruebas", index=False)
+        df_best_results.to_excel(writer, sheet_name="Mejores_resultados", index=False)
+
 
 
 
