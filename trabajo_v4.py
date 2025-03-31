@@ -124,7 +124,6 @@ def knn_experiment(X, y, iterations, max_k, string_sipca, output_dir,balance_typ
         all_train_times.append(train_times)
         all_predict_times.append(predict_times)
 
-        best_k_idx = np.argmax(scores)
         save_plot(k_range, scores, "KNN Score", "k", "Porcentaje acierto", f"{output_dir}/knn_scores_{string_sipca}_{i}.jpg")
 
     avg_scores = np.mean(all_scores, axis=0)
@@ -344,8 +343,8 @@ def main():
             # Ejecuta KNN para este escenario
             df_all_results,df_best_results = knn_experiment(
                 X_proc, y_proc,
-                iterations=5,
-                max_k=20,
+                iterations=10,
+                max_k=100,
                 string_sipca=f"{balance_str}_{pca_str}",
                 output_dir=output_dir, balance_type=balance_type,
                 df_all_results=df_all_results, df_best_results=df_best_results
@@ -361,7 +360,7 @@ def main():
             # Ejecuta SVM para este escenario
             df_all_results,df_best_results = svm_experiment(
                 X_proc, y_proc,
-                iterations=5,
+                iterations=10,
                 param_grid=svm_param_grid,
                 string_sipca=f"{balance_str}_{pca_str}",
                 output_dir=output_dir, balance_type=balance_type,
